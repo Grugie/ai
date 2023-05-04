@@ -1,0 +1,71 @@
+using HtmlAgilityPack;
+using System.Net;
+using System.Text;
+
+namespace HtmlTextClassifier
+{
+    class Program
+    {
+        private static void Main(string[] args)
+        {
+            // Define the model architecture
+            var model = new Sequential(new InputLayer(new TensorShape(-1, 10000)));
+            model.Add(new Dense(64, activation: "relu"));
+            model.Add(new Dense(32, activation: "relu"));
+            model.Add(new Dense(1, activation: "sigmoid"));
+
+            // Compile the model
+            model.Compile(optimizer: new Adam(), loss: "binary_crossentropy", metrics: new string[] { "accuracy" });
+
+            // Train the model
+            var trainData = GetRealtimeHtmlData(url, url);
+            var xTrain = trainData.Select(text =>
+            {
+                var data = text.Select(c => (float)c).ToArray();
+                var paddedData = Enumerable.Repeat(0f, 10000 - data.Length).Concat(data).ToArray();
+                return paddedData;
+            }).ToArray();
+            var yTrain = Enumerable.Repeat(0f, xTrain.Length).ToArray();
+            model.Fit(xTrain, yTrain, epochs: 10, batchSize: 32);
+
+            // Use the model to classify new text
+            while (true)
+            {
+                Console.Write("Enter some text (or 'quit' to exit): ");
+                var text = Console.ReadLine();
+                if (text == "quit")
+                {
+                    break;
+                }
+                float[] data = text.Select(c => (float)c)
+                    .ToArray();
+                var paddedData = Enumerable.Repeat(0f, 10000 - data.Length).Concat(data).ToArray();
+                var prediction = model.Predict(new float[][] { paddedData });
+                Console.WriteLine($"Prediction: {(prediction[0, 0] > 0.5 ? "Positive" : "Negative")}");
+            }
+        }
+
+        static string[] GetRealtimeHtmlData(string? url)
+        {
+            Console.Write("Enter a website URL to scrape: ");
+            var url = Console.ReadLine();
+            using var webClient = new WebClient();
+            string html = webClient.DownloadString(url);
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+            var sb = new StringBuilder();
+            foreach (var node in doc.DocumentNode.DescendantsAndSelf())
+            {
+                if (!node.HasChildNodes)
+                {
+                    string text = node.InnerText.Trim();
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        sb.AppendLine(text);
+                    }
+                }
+            }
+            return sb.ToString().Split('\n').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToArray();
+        }
+    }
+}
